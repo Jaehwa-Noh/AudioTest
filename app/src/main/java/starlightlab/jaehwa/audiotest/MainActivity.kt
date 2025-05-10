@@ -4,7 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioRecord
 import android.media.AudioTrack
 import android.media.MediaRecorder
 import android.os.Bundle
@@ -30,13 +29,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.core.app.ActivityCompat
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import starlightlab.jaehwa.audiotest.play.PlayController
+import starlightlab.jaehwa.audiotest.record.RecordController
 import starlightlab.jaehwa.audiotest.ui.theme.AudioTestTheme
-import java.io.DataInputStream
-import java.io.FileInputStream
-import java.io.FileOutputStream
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -61,131 +57,101 @@ fun Greeting(name: String, modifier: Modifier = Modifier) {
     val mSampleRate = 44100
     val mChannelCount = AudioFormat.CHANNEL_IN_STEREO
     val mAudioFormat = AudioFormat.ENCODING_PCM_16BIT
-    val mBufferSize = AudioTrack.getMinBufferSize(mSampleRate, mChannelCount, mAudioFormat)
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) {
 
     }
     val scope = rememberCoroutineScope()
-    var isRecord by remember { mutableStateOf(false) }
-    var mAudioRecord: AudioRecord? by remember { mutableStateOf(null) }
-    var mAudioTrack: AudioTrack? by remember { mutableStateOf(null) }
+    var isRecording by remember { mutableStateOf(false) }
     val localContext = LocalContext.current
 
-    var isPlay by remember { mutableStateOf(false) }
-
-    Column(modifier = modifier) {
-        Button(onClick = {
-            isRecord = true
-            if (ActivityCompat.checkSelfPermission(
-                    localContext,
-                    Manifest.permission.RECORD_AUDIO
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                launcher.launch(Manifest.permission.RECORD_AUDIO)
-                // TODO: Consider calling
-                //    ActivityCompat#requestPermissions
-                // here to request the missing permissions, and then overriding
-                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-                //                                          int[] grantResults)
-                // to handle the case where the user grants the permission. See the documentation
-                // for ActivityCompat#requestPermissions for more details.
-                return@Button
+    var isPlaying by remember { mutableStateOf(false) }
+    val fileName by remember {
+        mutableStateOf(
+            Environment.getExternalStorageDirectory().absolutePath + "/Download/record_${System.currentTimeMillis()}.pcm"
+        )
+    }
+    val playController = remember {
+        PlayController(
+            usage = AudioAttributes.USAGE_MEDIA,
+            contentType = AudioAttributes.CONTENT_TYPE_MUSIC,
+            sampleRate = mSampleRate,
+            encoding = AudioFormat.ENCODING_PCM_16BIT,
+            channelMask = AudioFormat.CHANNEL_OUT_STEREO,
+            mode = AudioTrack.MODE_STREAM,
+            sessionId = 0,
+            fileName = fileName,
+            onPlayFinish = {
+                if (isPlaying) isPlaying = false
             }
-            mAudioRecord = AudioRecord(
-                mAudioSource,
-                mSampleRate,
-                mChannelCount,
-                mAudioFormat,
-                mBufferSize
-            )
-
-            mAudioRecord?.startRecording()
-
-            scope.launch {
-                withContext(Dispatchers.IO) {
-                    var readData = ByteArray(mBufferSize)
-                    val mFilepath =
-                        Environment.getExternalStorageDirectory().absolutePath + "/Download/record.pcm"
-                    var fos = FileOutputStream(mFilepath)
-                    while (isRecord) {
-                        val ret = mAudioRecord?.read(readData, 0, mBufferSize)
-
-                        fos.write(readData, 0, mBufferSize)
-                    }
-
-                    mAudioRecord?.stop()
-                    mAudioRecord?.release()
-                    mAudioRecord = null
-
-                    fos.close()
-                }
-            }
-        }) {
-            Text("Record")
-        }
-
-        Button(onClick = {
-            isRecord = false
-        }) {
-            Text("Stop Record")
-        }
-
-        Button(onClick = {
-            isPlay = true
-
-            mAudioTrack = AudioTrack(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build(),
-                AudioFormat.Builder()
-                    .setSampleRate(mSampleRate)
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
-                    .build(),
-                mBufferSize,
-                AudioTrack.MODE_STREAM,
-                1,
-            )
-
-            scope.launch {
-                withContext(Dispatchers.IO) {
-
-                    val writeData = ByteArray(mBufferSize)
-                    val mFilepath =
-                        Environment.getExternalStorageDirectory().absolutePath + "/Download/record.pcm"
-                    val fis = FileInputStream(mFilepath)
-                    val dis = DataInputStream(fis)
-                    mAudioTrack?.play()
-
-
-                    while (isPlay) {
-                        val ret = dis.read(writeData, 0, mBufferSize)
-                        if (ret <= 0) {
-                            isPlay = false
-                            break
-                        }
-                        mAudioTrack?.write(writeData, 0, ret)
-                    }
-                    mAudioTrack?.stop()
-                    mAudioTrack?.release()
-                    mAudioTrack = null
-                }
-            }
-
-        }) {
-            Text("Play")
-        }
-
-        Button(onClick = {
-            isPlay = false
-        }) {
-            Text("Stop Play")
-        }
+        )
     }
 
+    val audioRecordController = remember {
+        RecordController(
+            mAudioSource,
+            mSampleRate,
+            mChannelCount,
+            mAudioFormat,
+            AudioFormat.CHANNEL_IN_STEREO,
+            fileName,
+        )
+    }
+
+    Column(modifier = modifier) {
+        if (isRecording) {
+            Button(onClick = {
+                audioRecordController.stopRecord()
+                isRecording = false
+            }) {
+                Text("Stop Record")
+            }
+        } else {
+            Button(onClick = {
+                isRecording = true
+                if (ActivityCompat.checkSelfPermission(
+                        localContext,
+                        Manifest.permission.RECORD_AUDIO
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    launcher.launch(Manifest.permission.RECORD_AUDIO)
+                    // TODO: Consider calling
+                    //    ActivityCompat#requestPermissions
+                    // here to request the missing permissions, and then overriding
+                    //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                    //                                          int[] grantResults)
+                    // to handle the case where the user grants the permission. See the documentation
+                    // for ActivityCompat#requestPermissions for more details.
+                    return@Button
+                }
+                scope.launch {
+                    audioRecordController.startRecord()
+                }
+
+            }) {
+                Text("Record")
+            }
+        }
+
+        if (isPlaying) {
+            Button(onClick = {
+                isPlaying = false
+            }) {
+                Text("Stop Play")
+            }
+        } else {
+            Button(onClick = {
+                isPlaying = true
+                scope.launch {
+                    playController.play()
+                }
+
+            }) {
+                Text("Play")
+            }
+        }
+    }
 }
 
 @Preview(showBackground = true)
