@@ -61,16 +61,14 @@ class RecordController(
                 val readData = ByteArray(bufferSize)
                 val file = File(fileName)
 
-//                val fos = FileOutputStream(mFilepath)
                 file.outputStream().use { currentFileOutputStream ->
                     while (isRecording) {
-                        val ret = audioRecord?.read(readData, 0, bufferSize)
+                        val readBytes = audioRecord?.read(readData, 0, bufferSize)
 
-                        if (ret == null) break
+                        if (readBytes == null) break
 
                         currentFileOutputStream.write(readData, 0, bufferSize)
                     }
-//                }
                     releaseAudioRecord()
                 }
             }

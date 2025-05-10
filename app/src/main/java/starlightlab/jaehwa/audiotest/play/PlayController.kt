@@ -85,7 +85,6 @@ class PlayController(
                 }
 
                 releaseAudioTrack()
-
             }
         }
         onPlayFinish()
